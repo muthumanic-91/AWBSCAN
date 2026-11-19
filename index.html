@@ -1,0 +1,92 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#123b37">
+<title>Parcel Scan</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f3f6f5;margin:0;padding:16px;color:#17212d}
+main{max-width:520px;margin:auto}
+header{background:#123b37;color:white;padding:20px;border-radius:14px;margin-bottom:14px}
+.card{background:white;padding:16px;border-radius:13px;margin-bottom:13px}
+label{display:block;font-size:12px;font-weight:bold;margin:12px 0 5px}
+input{width:100%;box-sizing:border-box;padding:13px;border:1px solid #ccd5d4;border-radius:8px;font-size:16px}
+button{padding:13px;border:0;border-radius:9px;font-weight:bold;background:#16765a;color:white;cursor:pointer}
+.scan{background:#e5f2ed;color:#135747}
+.row{display:flex;gap:8px}.row input{flex:1;min-width:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.full{width:100%;margin-top:15px}
+table{width:100%;font-size:12px;border-collapse:collapse}
+td,th{padding:9px 5px;border-bottom:1px solid #ddd;text-align:left}
+.table{overflow:auto}
+small{color:#667}
+</style>
+</head>
+<body>
+<main>
+<header><h2>📦 Parcel Scan</h2><small style="color:white">AWB • Barcode • Measurements</small></header>
+<section class="card">
+<label>AWB NUMBER</label>
+<div class="row"><input id="awb" placeholder="Enter AWB"><button class="scan" onclick="scan('awb')">📷</button></div>
+<label>BARCODE</label>
+<div class="row"><input id="barcode" placeholder="Enter barcode"><button class="scan" onclick="scan('barcode')">📷</button></div>
+</section>
+<section class="card">
+<h3>Parcel measurements</h3>
+<div class="grid">
+<div><label>Length (cm)</label><input id="l" type="number" step="0.1"></div>
+<div><label>Width (cm)</label><input id="w" type="number" step="0.1"></div>
+<div><label>Height (cm)</label><input id="h" type="number" step="0.1"></div>
+<div><label>Weight (kg)</label><input id="wt" type="number" step="0.01"></div>
+</div>
+<button class="full" onclick="save()">＋ Save Parcel</button>
+</section>
+<section class="card">
+<h3>Captured parcels: <span id="count">0</span></h3>
+<div class="table">
+<table><thead><tr><th>AWB</th><th>Barcode</th><th>L×W×H</th><th>Kg</th></tr></thead><tbody id="records"></tbody></table>
+</div>
+<button class="full" onclick="exportCSV()">⬇ Export CSV</button>
+<button class="full" style="background:#a43b35" onclick="clearData()">Clear all</button>
+</section>
+</main>
+<script>
+let data=JSON.parse(localStorage.getItem('parcelData')||'[]');
+const el=id=>document.getElementById(id);
+function render(){
+el('count').textContent=data.length;
+el('records').innerHTML=data.map(x=>'<tr><td>'+esc(x.awb)+'</td><td>'+esc(x.barcode)+'</td><td>'+x.l+'×'+x.w+'×'+x.h+'</td><td>'+x.wt+'</td></tr>').join('');
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function save(){
+let x={awb:el('awb').value.trim(),barcode:el('barcode').value.trim(),l:+el('l').value,w:+el('w').value,h:+el('h').value,wt:+el('wt').value};
+if(!x.awb||!x.l||!x.w||!x.h||!x.wt||[x.l,x.w,x.h,x.wt].some(v=>v<0)){alert('Enter AWB, all dimensions and weight.');return}
+data.push(x);localStorage.setItem('parcelData',JSON.stringify(data));render();
+['awb','barcode','l','w','h','wt'].forEach(id=>el(id).value='');el('awb').focus();
+}
+function exportCSV(){
+let rows=[['AWB','Barcode','Length cm','Width cm','Height cm','Weight kg'],...data.map(x=>[x.awb,x.barcode,x.l,x.w,x.h,x.wt])];
+let csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+let a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv'}));a.download='ParcelScan.csv';a.click();URL.revokeObjectURL(a.href);
+}
+function clearData(){if(confirm('Delete all records?')){data=[];localStorage.removeItem('parcelData');render()}}
+async function scan(id){
+if(!('BarcodeDetector' in window)){alert('Camera barcode scanning is not supported here. Please type the code.');return}
+try{
+let formats=await BarcodeDetector.getSupportedFormats();
+let detector=new BarcodeDetector({formats});
+let stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+let video=document.createElement('video');video.srcObject=stream;video.playsInline=true;await video.play();
+let modal=document.createElement('div');modal.style='position:fixed;inset:0;background:#000e;z-index:9;padding:20px;color:white';
+let close=document.createElement('button');close.textContent='Close scanner';let msg=document.createElement('p');msg.textContent='Point camera at barcode';
+modal.append(video,msg,close);document.body.append(modal);
+let active=true;close.onclick=()=>{active=false;stream.getTracks().forEach(t=>t.stop());modal.remove()};
+async function detect(){if(!active)return;try{let codes=await detector.detect(video);if(codes.length){el(id).value=codes[0].rawValue;close.click();return}}catch(e){}if(active)requestAnimationFrame(detect)}
+detect();
+}catch(e){alert('Camera permission or access unavailable: '+e.message)}
+}
+render();
+</script>
+</body>
+</html>
